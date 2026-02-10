@@ -33,6 +33,9 @@ void GameManager::printHud() const {
 }
 
 void GameManager::printMenu() const {
+    std::cout << "   o\n";
+    std::cout << "  /|\\\n";
+    std::cout << "  / \\\n\n";
     std::cout << "1. Исследовать дальше\n";
     std::cout << "2. Осмотреть инвентарь (I)\n";
     std::cout << "3. Использовать зелье здоровья\n";
@@ -129,6 +132,9 @@ void GameManager::explore() {
 }
 
 void GameManager::encounterEnemy(Enemy enemy) {
+    std::cout << "      />\n";
+    std::cout << " (====|====================>\n";
+    std::cout << "      \\\\>\n\n";
     std::cout << "Вас атакует " << enemy.name() << "!\n";
     GameState state; state.player = &player_;
     std::uniform_real_distribution<double> d(0.0,1.0);
