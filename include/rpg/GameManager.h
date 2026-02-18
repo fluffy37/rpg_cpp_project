@@ -22,6 +22,7 @@ private:
     void resetGame();
     void explore();
     void encounterEnemy(Enemy enemy);
+    void drawBattleTable(const Player& player, const Enemy& enemy);
     unsigned int seed_;
 
     std::mt19937 rng_;

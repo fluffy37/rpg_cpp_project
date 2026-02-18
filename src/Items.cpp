@@ -1,5 +1,7 @@
 #include "rpg/Items.h"
 #include "rpg/Player.h"
+#include <iostream>
+#include <thread>
 
 namespace rpg {
 
@@ -8,6 +10,13 @@ std::string HealthPotion::label() const {
 }
 
 std::string HealthPotion::use(Player& target) {
+    std::cout << "  mmm" << std::endl;
+    std::cout << " )-(" << std::endl;
+    std::cout << "(   )" << std::endl;
+    std::cout << "|   |" << std::endl;
+    std::cout << "|   |" << std::endl;
+    std::cout << "|___|" << std::endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
     int healed = target.heal(healAmount_);
     return "+" + std::to_string(healed) + " HP";
 }
