@@ -5,19 +5,12 @@
 #include <cctype>
 #include <iomanip>
 #include <cstdlib>
-#include <chrono>
-#include <thread>
+#include <algorithm>
 
 namespace rpg {
-    static char readKeylower() {
-        return (char)std::tolower((unsigned char)_getch());
-    }
 
-    static std::string lowerAscii(std::string s) {
-        for (auto& ch : s) {
-            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-        }
-        return s;
+    static char readKeylower() {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(_getch())));
     }
 
     GameManager::GameManager(unsigned int seed)
@@ -28,14 +21,64 @@ namespace rpg {
         allyFactory_(rng_),
         saveManager_("saves", "save.txt"),
         inventory_(20),
-        player_("Player1", 1, 60, 60)
-    {
+        player_("Player1", 1, 60, 60),
+        currentDifficulty_(Difficulty::Normal) {
+        selectDifficulty();
         resetGame();
     }
 
+    void GameManager::selectDifficulty() {
+        std::cout << "\n╔════════════════════════════════════════╗\n";
+        std::cout << "║     ВЫБОР УРОВНЯ СЛОЖНОСТИ            ║\n";
+        std::cout << "╚════════════════════════════════════════╝\n\n";
+
+        printDifficultyMenu();
+
+        while (true) {
+            std::cout << "\nВыберите сложность (1-4): ";
+            char c = readKeylower();
+            std::cout << c << "\n";
+
+            if (c == '1') { currentDifficulty_ = Difficulty::Easy; break; }
+            else if (c == '2') { currentDifficulty_ = Difficulty::Normal; break; }
+            else if (c == '3') { currentDifficulty_ = Difficulty::Hard; break; }
+            else if (c == '4') { currentDifficulty_ = Difficulty::Nightmare; break; }
+            else { std::cout << "Неверный выбор!\n"; }
+        }
+
+        DifficultyManager::instance().setDifficulty(currentDifficulty_);
+        std::cout << "\nУстановлена сложность: "
+            << DifficultyManager::instance().getDifficultyName() << "\n";
+        std::cout << DifficultyManager::instance().getDifficultyDescription() << "\n";
+        std::cout << "\nНажмите любую клавишу для продолжения...";
+        (void)_getch();
+    }
+
+    void GameManager::printDifficultyMenu() const {
+        std::cout << "  1. Лёгкий\n";
+        std::cout << "     - Враги: -30% HP, -30% урон\n";
+        std::cout << "     - Игрок: +30% HP\n";
+        std::cout << "     - Награды: +20% опыт, +20% золото\n\n";
+
+        std::cout << "  2. Нормальный\n";
+        std::cout << "     - Сбалансированный опыт\n\n";
+
+        std::cout << "  3. Сложный\n";
+        std::cout << "     - Враги: +40% HP, +30% урон\n";
+        std::cout << "     - Игрок: -20% HP\n";
+        std::cout << "     - Награды: +30% опыт, +30% золото\n\n";
+
+        std::cout << "  4. Кошмар\n";
+        std::cout << "     - Враги: +100% HP, +60% урон\n";
+        std::cout << "     - Игрок: -40% HP\n";
+        std::cout << "     - Награды: +50% опыт, +50% золото\n\n";
+    }
+
     void GameManager::printHud() const {
-        for (const auto& l : player_.headerLines()) std::cout << l << "\n";
-        std::cout << "\nТекущая локация: " << player_.location().toString() << "\n\n";
+        for (const auto& l : player_.headerLines())
+            std::cout << l << "\n";
+        std::cout << "\nТекущая локация: " << player_.location().toString() << "\n";
+        std::cout << "Сложность: " << DifficultyManager::instance().getDifficultyName() << "\n";
     }
 
     void GameManager::printMenu() const {
@@ -119,12 +162,16 @@ namespace rpg {
         double roll = d(rng_);
         int depth = player_.location().depth;
 
-       
-        double enemyChance = 0.4 + (depth * 0.03); // Становится опаснее с глубиной
-        double npcChance = 0.6 - (depth * 0.02); // Меньше NPC на глубине
-        double itemChance = 0.8 - (depth * 0.01); // Чуть реже находить предметы на глубине
+        // Базовые шансы
+        double enemyChance = 0.4 + (depth * 0.03);
+        double npcChance = 0.6 - (depth * 0.02);
+        double itemChance = 0.8 - (depth * 0.01);
 
-        // Ограничиваем вероятности от 0 до 1
+        // Применить модификаторы сложности
+        enemyChance = DifficultyManager::instance().modifyEnemyChance(enemyChance);
+        itemChance = DifficultyManager::instance().modifyItemDropChance(itemChance);
+
+        // Ограничения
         enemyChance = std::min(0.95, std::max(0.2, enemyChance));
         npcChance = std::min(0.75, std::max(0.1, npcChance));
         itemChance = std::min(0.95, std::max(0.5, itemChance));
@@ -143,38 +190,43 @@ namespace rpg {
             std::cout << ally.act(state) << "\n";
         }
         else {
-            // Случайное количество здоровья для зелья
             int healAmount = 20 + rng_() % 25;
             bool ok = inventory_.add(std::make_unique<HealthPotion>(healAmount));
-            std::cout << (ok ? "Вы нашли предмет: Зелье здоровья.\n" : "Вы нашли зелье, но инвентарь переполнен.\n");
+            std::cout << (ok ? "Вы нашли предмет: Зелье здоровья.\n"
+                : "Вы нашли зелье, но инвентарь переполнен.\n");
         }
 
-        // Шанс углубиться зависит от текущей глубины
         if (d(rng_) < 0.25 + (0.05 * (10 - depth))) {
             player_.location().depth += 1;
             std::cout << "Вы углубились. Теперь: " << player_.location().toString() << "\n";
         }
     }
 
+
     void GameManager::resetGame() {
         rng_.seed(seed_);
         inventory_ = Inventory(20);
         inventory_.attach(&invObserver_);
-        player_ = Player("Player1", 1, 60, 60); // ИЗМЕНЕНО: 5 -> 1, 60/45 -> 30/30
+
+        int baseHp = 60;
+        int modifiedHp = DifficultyManager::instance().modifyPlayerHp(baseHp);
+
+        player_ = Player("Player1", 1, modifiedHp, modifiedHp);
         player_.bindInventory(&inventory_);
         registerDefaultItems();
-        player_.mutableGold() = 0; // Начинаем с 0 золота
-        player_.mutableExp() = 0; // Начинаем с 0 опыта
-        player_.mutableNextLevelExp() = 100; // Начальный порог опыта
-        player_.location().depth = 1; // Начинаем с 1 уровня подземелья
-        player_.location().description =
-            "Начальные коридоры подземелья.";
-        inventory_.clear(); // Очищаем инвентарь
-        inventory_.add(std::make_unique<HealthPotion>(10)); // Одно зелье для новичка
+
+        player_.mutableGold() = 0;
+        player_.mutableExp() = 0;
+        player_.mutableNextLevelExp() = 100;
+        player_.location().depth = 1;
+        player_.location().description = "Начальные коридоры подземелья.";
+
+        inventory_.clear();
+        inventory_.add(std::make_unique<HealthPotion>(10));
     }
 
     void GameManager::drawBattleTable(const Player& player, const Enemy& enemy) {
-        // УДАЛЕНО: std::system("cls");
+       
 
         // Выводим информацию об игроке перед таблицей
         for (const auto& l : player.headerLines())
@@ -210,22 +262,39 @@ namespace rpg {
     }
 
     void GameManager::encounterEnemy(Enemy enemy) {
-        std::cout << "Вас атакует " << enemy.name() << "!\n";  // Начальное сообщение
-        GameState state; state.player = &player_;
+        std::cout << "Вас атакует " << enemy.name() << "!\n";
+
+        
+        int modifiedMaxHp = DifficultyManager::instance().modifyEnemyHp(enemy.maxHp());
+        int modifiedAtk = DifficultyManager::instance().modifyEnemyAttack(enemy.attackPower());
+        int modifiedExp = DifficultyManager::instance().modifyExpReward(enemy.expReward());
+        int modifiedGold = DifficultyManager::instance().modifyGoldReward(enemy.goldReward());
+
+        // Создаём нового врага с модифицированными характеристиками
+        Enemy modifiedEnemy(
+            enemy.name(),
+            enemy.level(),
+            modifiedMaxHp,
+            modifiedMaxHp,  // текущее HP = макс HP
+            modifiedAtk,
+            modifiedExp,
+            modifiedGold
+        );
+
+        GameState state;
+        state.player = &player_;
         std::uniform_real_distribution<double> d(0.0, 1.0);
 
-        // Начальная таблица
-        drawBattleTable(player_, enemy);
+        drawBattleTable(player_, modifiedEnemy);
 
-        // Цикл боя
-        while (player_.isAlive() && enemy.isAlive()) {
+        while (player_.isAlive() && modifiedEnemy.isAlive()) {
             char a = readKeylower();
             std::cout << a << "\n";
+
             if (a == 'p') useHealthPotion();
             else if (a == 'r') {
-                // Шанс побега зависит от разницы уровней
-                double escapeChance = 0.5 - (enemy.level() - player_.level()) * 0.1;
-                escapeChance = std::max(0.1, escapeChance); // Минимум 10% шанс
+                double escapeChance = 0.5 - (modifiedEnemy.level() - player_.level()) * 0.1;
+                escapeChance = std::max(0.1, escapeChance);
                 if (d(rng_) < escapeChance) {
                     std::cout << "Вы успешно сбежали.\n";
                     std::cout << "\nНажмите любую клавишу для продолжения...";
@@ -235,49 +304,56 @@ namespace rpg {
                 std::cout << "Не удалось сбежать!\n";
             }
             else {
-                // Случайный урон с учетом уровня игрока
                 int baseDmg = 5 + player_.level();
                 int variance = player_.level() / 2;
                 int dmg = baseDmg + (rng_() % (variance * 2 + 1)) - variance;
                 dmg = std::max(1, dmg);
-                std::cout << "Вы наносите " << enemy.takeDamage(dmg) << " урона.\n";
+                std::cout << "Вы наносите " << modifiedEnemy.takeDamage(dmg) << " урона.\n";
             }
 
-            if (enemy.isAlive()) std::cout << enemy.act(state) << "\n";
+            if (modifiedEnemy.isAlive()) {
+                std::cout << modifiedEnemy.act(state) << "\n";
+            }
 
-            // Пауза для чтения сообщений
             std::cout << "\nНажмите любую клавишу для продолжения...";
-            _getch();
+            (void)_getch();
             std::cout << "\n";
 
-            // Обнови таблицу после хода
-            if (player_.isAlive() && enemy.isAlive()) {
-                drawBattleTable(player_, enemy);
+            if (player_.isAlive() && modifiedEnemy.isAlive()) {
+                drawBattleTable(player_, modifiedEnemy);
                 printHud();
             }
         }
 
-        // Конец боя: сообщение о победе/поражении
         if (player_.isAlive()) {
-            std::cout << enemy.name() << " повержен!\n";
-            // Случайная награда с небольшим разбросом
-            int goldReward = enemy.goldReward() + (rng_() % 5) - 2;
-            int expReward = enemy.expReward() + (rng_() % 3) - 1;
+            std::cout << modifiedEnemy.name() << " повержен!\n";
+
+            // ✅ Награды уже модифицированы при создании врага
+            int goldReward = modifiedEnemy.goldReward() + (rng_() % 5) - 2;
+            int expReward = modifiedEnemy.expReward() + (rng_() % 3) - 1;
             goldReward = std::max(1, goldReward);
             expReward = std::max(1, expReward);
 
             player_.gainGold(goldReward);
             player_.gainExp(expReward);
-            std::cout << "Награда: +" << goldReward << " золота, +" << expReward << " опыта.\n";
+
+            std::cout << "Награда: +" << goldReward << " золота, +"
+                << expReward << " опыта.\n";
+
+            // ✅ Запись статистики
+            DifficultyManager::instance().recordEnemyKilled();
         }
         else {
             std::cout << "Вы проиграли...\n";
+            // ✅ Запись смерти
+            DifficultyManager::instance().recordDeath();
         }
 
         std::cout << "\nНажмите любую клавишу для продолжения...";
-        _getch();
+        (void)_getch();
     }
 
+    // ✅ В run() добавить запись смерти при Game Over:
     void GameManager::run() {
         while (true) {
             printHud();
@@ -291,16 +367,20 @@ namespace rpg {
             else if (c == '3') useHealthPotion();
             else if (c == '4' || c == 'f5') saveGame();
             else if (c == '5' || c == 'f9') loadGame();
-            else if (c == '6' || c == 'q' || c == 'exit' || c == 'quit') { std::cout << "Выход в меню.До встречи.\n"; break; }
+            else if (c == '6' || c == 'q') {
+                std::cout << "Выход в меню. До встречи.\n";
+                break;
+            }
             else std::cout << "Неизвестная команда.\n";
 
-            std::cout << "\n" << std::string(60, '-') << "\n\n";
+            std::cout << "\n" << std::string(60, '-') << "\n";
+
             if (!player_.isAlive()) {
-                std::cout << "Игрок пал. Игра окончена. \n\n";
-                std::cout << "1 - Начать заново \n";
-                std::cout << "2 - Загрузить сохранение \n";
-                std::cout << "3 - Выйти \n";
-                std::cout << "Выбор: \n";
+                std::cout << "Игрок пал. Игра окончена.\n";
+                std::cout << "1 - Начать заново\n";
+                std::cout << "2 - Загрузить сохранение\n";
+                std::cout << "3 - Выйти\n";
+                std::cout << "Выбор: ";
 
                 while (true) {
                     char k = readKeylower();
@@ -312,17 +392,13 @@ namespace rpg {
                     }
                     else if (k == '2') {
                         loadGame();
-
                         if (player_.isAlive()) {
-                            std::cout << "Игра загружена. \n";
+                            std::cout << "Игра загружена.\n";
                             break;
-                        }
-                        else {
-                            std::cout << "Загруженный игрок не жив. Выберите другой слот.\n";
                         }
                     }
                     else if (k == '3' || k == 'q') {
-                        std::cout << "Выход в меню.До встречи.\n";
+                        std::cout << "Выход в меню. До встречи.\n";
                         return;
                     }
                     else {
@@ -332,4 +408,5 @@ namespace rpg {
             }
         }
     }
-}
+
+} // namespace rpg

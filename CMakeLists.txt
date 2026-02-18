@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 project(rpg LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_compile_definitions(WIN32_LEAN_AND_MEAN)
+add_compile_definitions(NOMINMAX)
 
 add_executable(rpg
   src/main.cpp
@@ -14,7 +16,7 @@ add_executable(rpg
   src/Items.cpp
   src/Factories.cpp
   src/SaveSystem.cpp
-)
+ "src/Difficulty.cpp")
 target_include_directories(rpg PRIVATE include)
 
 # --- SQLite (для слотов сохранений) ---
